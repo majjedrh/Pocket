@@ -1,0 +1,6 @@
+{
+  "name": "ملتقط الأوامر",
+  "description": "تطبيق لالتقاط أوامر الشبكة المرسلة من التطبيقات الأخرى",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
