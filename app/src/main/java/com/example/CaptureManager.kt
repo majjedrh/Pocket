@@ -14,6 +14,7 @@ data class CapturedPacket(
 object CaptureManager {
     val packetFlow = MutableSharedFlow<CapturedPacket>(replay = 100, extraBufferCapacity = 500)
     var isCapturing = false
+    var isProxyMode = false
     
     var targetInput: String = ""
     var targetIp: String = ""

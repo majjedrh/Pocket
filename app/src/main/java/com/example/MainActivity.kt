@@ -66,7 +66,7 @@ sealed class Screen {
 @Composable
 fun MainApp() {
     val context = LocalContext.current
-    var currentScreen by remember { mutableStateOf<Screen>(if (CaptureManager.isCapturing) Screen.CaptureScreen else Screen.TargetInput) }
+    var currentScreen by remember { mutableStateOf<Screen>(if (CaptureManager.isCapturing || LocalProxyManager.isRunning) Screen.CaptureScreen else Screen.TargetInput) }
     
     val vpnLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
@@ -80,23 +80,47 @@ fun MainApp() {
 
     when (currentScreen) {
         is Screen.TargetInput -> {
-            TargetInputScreen(onStart = { input ->
+            TargetInputScreen(onStart = { input, isProxy ->
                 CaptureManager.targetInput = input
-                val vpnIntent = VpnService.prepare(context)
-                if (vpnIntent != null) {
-                    vpnLauncher.launch(vpnIntent)
+                CaptureManager.isProxyMode = isProxy
+                
+                if (isProxy) {
+                    var hostPart = input
+                    var portPart: Int? = null
+                    if (input.contains(":")) {
+                        val parts = input.split(":")
+                        if (parts.size == 2) {
+                            hostPart = parts[0]
+                            portPart = parts[1].toIntOrNull()
+                        }
+                    }
+                    if (portPart != null) {
+                        LocalProxyManager.startProxy(hostPart, portPart)
+                        currentScreen = Screen.CaptureScreen
+                    } else {
+                        Toast.makeText(context, "الرجاء تحديد المنفذ (Port) للوكيل. مثال: 192.168.1.5:20000", Toast.LENGTH_LONG).show()
+                    }
                 } else {
-                    val intent = Intent(context, CaptureService::class.java)
-                    context.startService(intent)
-                    currentScreen = Screen.CaptureScreen
+                    val vpnIntent = VpnService.prepare(context)
+                    if (vpnIntent != null) {
+                        vpnLauncher.launch(vpnIntent)
+                    } else {
+                        val intent = Intent(context, CaptureService::class.java)
+                        context.startService(intent)
+                        currentScreen = Screen.CaptureScreen
+                    }
                 }
             })
         }
         is Screen.CaptureScreen -> {
             CaptureScreen(
                 onStop = {
-                    val intent = Intent(context, CaptureService::class.java).apply { action = "STOP" }
-                    context.startService(intent)
+                    if (CaptureManager.isProxyMode) {
+                        LocalProxyManager.stopProxy()
+                    } else {
+                        val intent = Intent(context, CaptureService::class.java).apply { action = "STOP" }
+                        context.startService(intent)
+                    }
                     currentScreen = Screen.TargetInput
                     CaptureManager.clearPackets()
                 }
@@ -106,8 +130,9 @@ fun MainApp() {
 }
 
 @Composable
-fun TargetInputScreen(onStart: (String) -> Unit) {
+fun TargetInputScreen(onStart: (String, Boolean) -> Unit) {
     var targetInput by remember { mutableStateOf(CaptureManager.targetInput) }
+    var isProxyMode by remember { mutableStateOf(true) }
 
     Scaffold(
         topBar = {
@@ -122,7 +147,18 @@ fun TargetInputScreen(onStart: (String) -> Unit) {
                 border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
             ) {
                 Column(Modifier.padding(16.dp)) {
-                    Text("حدد هدف المراقبة (بدون تحديد تطبيق)", color = PrimaryAccent, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("حدد هدف المراقبة والطريقة", color = PrimaryAccent, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Spacer(Modifier.height(16.dp))
+                    
+                    Row(modifier = Modifier.fillMaxWidth().background(BgDark, RoundedCornerShape(8.dp)).padding(4.dp)) {
+                        Box(modifier = Modifier.weight(1f).clickable { isProxyMode = true }.background(if (isProxyMode) SecondaryButtonBg else Color.Transparent, RoundedCornerShape(8.dp)).padding(12.dp), contentAlignment = Alignment.Center) {
+                            Text("وضع الوكيل (توصيل)", color = if (isProxyMode) PrimaryAccent else TextSecondary, fontWeight = FontWeight.Medium, fontSize = 12.sp)
+                        }
+                        Box(modifier = Modifier.weight(1f).clickable { isProxyMode = false }.background(if (!isProxyMode) SecondaryButtonBg else Color.Transparent, RoundedCornerShape(8.dp)).padding(12.dp), contentAlignment = Alignment.Center) {
+                            Text("وضع VPN (مراقبة)", color = if (!isProxyMode) PrimaryAccent else TextSecondary, fontWeight = FontWeight.Medium, fontSize = 12.sp)
+                        }
+                    }
+                    
                     Spacer(Modifier.height(16.dp))
                     
                     OutlinedTextField(
@@ -139,17 +175,28 @@ fun TargetInputScreen(onStart: (String) -> Unit) {
                         ),
                         singleLine = true
                     )
-                    Text(
-                        "أدخل عنوان IP أو رابط لفلترة الاتصالات وتسجيل الأوامر المرسلة إلى هذا الهدف فقط عبر أي تطبيق يعمل على الجهاز.",
-                        color = TextSecondary, 
-                        fontSize = 12.sp, 
-                        modifier = Modifier.padding(top = 8.dp), 
-                        lineHeight = 18.sp
-                    )
+                    
+                    if (isProxyMode) {
+                        Text(
+                            "💡 يحل هذا الوضع مشكلة انقطاع الاتصال! سيقوم تطبيق الأوامر بإعادة توجيه الاتصال تلقائياً.\nعليك التوجه لتطبيق التحكم الخاص بك، وكتابة الـ IP ليصبح 127.0.0.1 بنفس المنفذ، وسيتكفل تطبيقنا بالباقي ويمرر الاتصال للرسيفر.",
+                            color = ProtocolGreen, 
+                            fontSize = 11.sp, 
+                            modifier = Modifier.padding(top = 8.dp), 
+                            lineHeight = 18.sp
+                        )
+                    } else {
+                        Text(
+                            "⚠️ تحذير: الـ VPN لا يكمل عملية الاتصال. يقوم فقط بالتقاط المحاولة (Drop). إذا لم يتصل تطبيقك الخارجي، استخدم \"وضع الوكيل\". للفلترة والتخطي يتم تطبيقها تلقائيا للـ IP المدخل.",
+                            color = WarningText, 
+                            fontSize = 11.sp, 
+                            modifier = Modifier.padding(top = 8.dp), 
+                            lineHeight = 18.sp
+                        )
+                    }
                     
                     Spacer(Modifier.height(24.dp))
                     Button(
-                        onClick = { onStart(targetInput) },
+                        onClick = { onStart(targetInput, isProxyMode) },
                         modifier = Modifier.fillMaxWidth().height(50.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = PrimaryAccent),
                         shape = RoundedCornerShape(12.dp)
