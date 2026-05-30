@@ -16,4 +16,3 @@ val SecondaryButtonActive = Color(0xFF312E33)
 val WarningText = Color(0xFFFFB4AB)
 val ProtocolGreen = Color(0xFF4ADE80)
 val ProtocolBlue = Color(0xFF60A5FA)
-

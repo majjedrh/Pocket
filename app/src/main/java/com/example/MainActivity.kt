@@ -27,7 +27,6 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,7 +35,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
@@ -173,7 +171,6 @@ fun AppSelectionScreen(onAppSelected: (AppInfo) -> Unit) {
 
 @Composable
 fun CaptureScreen(appName: String, packageName: String, onStop: () -> Unit) {
-    val context = LocalContext.current
     var packets by remember { mutableStateOf<List<CapturedPacket>>(emptyList()) }
     
     LaunchedEffect(Unit) {
@@ -192,7 +189,6 @@ fun CaptureScreen(appName: String, packageName: String, onStop: () -> Unit) {
         }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp).padding(top = 16.dp)) {
-            // Target App Card
             Row(
                 modifier = Modifier.fillMaxWidth().background(SurfaceDark, RoundedCornerShape(16.dp)).border(1.dp, BorderColor, RoundedCornerShape(16.dp)).padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -218,9 +214,8 @@ fun CaptureScreen(appName: String, packageName: String, onStop: () -> Unit) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Packets Header
             Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("الأوامر الملتقطة (\${packets.size})", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextSecondary, letterSpacing = 1.sp)
+                Text("الأوامر الملتقطة (${packets.size})", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextSecondary, letterSpacing = 1.sp)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(modifier = Modifier.size(6.dp).background(Color(0xFF22C55E), CircleShape))
                     Spacer(modifier = Modifier.width(4.dp))
@@ -228,7 +223,6 @@ fun CaptureScreen(appName: String, packageName: String, onStop: () -> Unit) {
                 }
             }
 
-            // Packets List
             Box(modifier = Modifier.fillMaxWidth().weight(1f).border(1.dp, BorderColor, RoundedCornerShape(12.dp)).clip(RoundedCornerShape(12.dp))) {
                 if (packets.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -242,7 +236,7 @@ fun CaptureScreen(appName: String, packageName: String, onStop: () -> Unit) {
                             val isHTTPColor = packet.protocol.contains("TCP") || packet.protocol.contains("HTTP")
                             val badgeColor = if (isHTTPColor) ProtocolBlue else ProtocolGreen
                             
-                            Column(modifier = Modifier.fillMaxWidth().border(0.5.dp, BorderColor).clickable { /* copy action if needed */ }.padding(12.dp)) {
+                            Column(modifier = Modifier.fillMaxWidth().border(0.5.dp, BorderColor).clickable { /* copy action */ }.padding(12.dp)) {
                                 Row(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                                     Text(timeStr, fontSize = 10.sp, color = WarningText)
                                     Box(modifier = Modifier.border(1.dp, badgeColor, RoundedCornerShape(4.dp)).padding(horizontal = 4.dp, vertical = 2.dp)) {
@@ -299,7 +293,7 @@ fun FooterSection(packets: List<CapturedPacket>) {
         Button(
             onClick = {
                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                val allText = packets.joinToString("\n\n") { "Protocol: \${it.protocol}\nPayload:\n\${it.payload}" }
+                val allText = packets.joinToString("\n\n") { "Protocol: ${it.protocol}\nPayload:\n${it.payload}" }
                 clipboard.setPrimaryClip(ClipData.newPlainText("Captured Commands", allText))
                 Toast.makeText(context, "تم النسخ", Toast.LENGTH_SHORT).show()
             },

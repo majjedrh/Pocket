@@ -47,7 +47,7 @@ object PacketParser {
         if (textPayload.isNotBlank()) {
             // Use runBlocking or CoroutineScope to emit.
             // Better to use GlobalScope or a service scope, but since this might be called frequently:
-            kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+            GlobalScope.launch(Dispatchers.Default) {
                 CaptureManager.emitPacket(protocolName, srcIp, destIp, textPayload)
             }
         }

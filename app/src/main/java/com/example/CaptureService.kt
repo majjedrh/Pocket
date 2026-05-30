@@ -1,16 +1,9 @@
 package com.example
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
-import android.content.Context
 import android.content.Intent
 import android.net.VpnService
-import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.util.Log
-import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -49,7 +42,11 @@ class CaptureService : VpnService() {
                 .addAddress("10.0.0.2", 24)
                 .addRoute("0.0.0.0", 0) // Route everything through VPN
                 .addAllowedApplication(targetPackage) // Only for chosen app
-            
+                .allowBypass() // Allow apps to bypass VPN for local network discovery
+
+            // For local discovery to work inside the targeted app itself, sometimes routing 0.0.0.0/0 captures broadcast.
+            // Android 11+ might drop broadcasts in VPN if not routed properly, or might require allowBypass.
+
             vpnInterface = builder.establish()
 
             if (vpnInterface != null) {
@@ -60,7 +57,7 @@ class CaptureService : VpnService() {
                 stopCapture()
             }
         } catch (e: Exception) {
-            Log.e("CaptureService", "VPN Error: \${e.message}")
+            Log.e("CaptureService", "VPN Error: ${e.message}")
             stopCapture()
         }
     }
@@ -78,7 +75,7 @@ class CaptureService : VpnService() {
                     }
                 }
             } catch (e: Exception) {
-                Log.e("CaptureService", "Read error: \${e.message}")
+                Log.e("CaptureService", "Read error: ${e.message}")
             } finally {
                 stopCapture()
             }
