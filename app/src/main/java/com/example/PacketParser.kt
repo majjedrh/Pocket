@@ -7,10 +7,10 @@ import kotlinx.coroutines.launch
 object PacketParser {
 
     fun parseAndEmit(packet: ByteArray, length: Int) {
-        if (length < 20) return // Minimum IPv4 header
+        if (length < 20) return
 
         val version = (packet[0].toInt() shr 4) and 0x0F
-        if (version != 4) return // Only supporting IPv4 parsing for simplicity here
+        if (version != 4) return
 
         val ihl = packet[0].toInt() and 0x0F
         val ipHeaderLength = ihl * 4
@@ -21,34 +21,62 @@ object PacketParser {
 
         var payloadOffset = ipHeaderLength
         var protocolName = "Unknown"
+        var flagsInfo = ""
+        var sourcePort = 0
+        var destPort = 0
 
         if (protocol == 6) { // TCP
             protocolName = "TCP"
             if (length >= ipHeaderLength + 20) {
+                sourcePort = ((packet[ipHeaderLength].toInt() and 0xFF) shl 8) or (packet[ipHeaderLength + 1].toInt() and 0xFF)
+                destPort = ((packet[ipHeaderLength + 2].toInt() and 0xFF) shl 8) or (packet[ipHeaderLength + 3].toInt() and 0xFF)
+
                 val dataOffset = (packet[ipHeaderLength + 12].toInt() shr 4) and 0x0F
                 payloadOffset += (dataOffset * 4)
+                
+                val tcpFlags = packet[ipHeaderLength + 13].toInt() and 0xFF
+                if ((tcpFlags and 0x02) != 0) flagsInfo += "[SYN] "
+                if ((tcpFlags and 0x10) != 0) flagsInfo += "[ACK] "
+                if ((tcpFlags and 0x01) != 0) flagsInfo += "[FIN] "
+                if ((tcpFlags and 0x08) != 0) flagsInfo += "[PSH] "
+                if ((tcpFlags and 0x04) != 0) flagsInfo += "[RST] "
             }
         } else if (protocol == 17) { // UDP
             protocolName = "UDP"
+            if (length >= ipHeaderLength + 8) {
+                sourcePort = ((packet[ipHeaderLength].toInt() and 0xFF) shl 8) or (packet[ipHeaderLength + 1].toInt() and 0xFF)
+                destPort = ((packet[ipHeaderLength + 2].toInt() and 0xFF) shl 8) or (packet[ipHeaderLength + 3].toInt() and 0xFF)
+            }
             payloadOffset += 8
         } else {
-            // Other protocols without payload parsing
             return 
         }
 
-        val payloadLength = length - payloadOffset
-        if (payloadLength <= 0) return
+        val targetPort = CaptureManager.targetPort
+        if (targetPort != null && targetPort > 0) {
+            if (sourcePort != targetPort && destPort != targetPort) {
+                return
+            }
+        }
 
-        val payloadBytes = packet.copyOfRange(payloadOffset, length)
+        val payloadLength = length - payloadOffset
+        val payloadBytes = if (payloadLength > 0) packet.copyOfRange(payloadOffset, length) else ByteArray(0)
         
-        // Convert the payload to an identifiable string format
-        val textPayload = sanitizePayload(payloadBytes)
+        var textPayload = ""
+        if (payloadLength > 0) {
+            textPayload = sanitizePayload(payloadBytes)
+        }
         
+        if (textPayload.isBlank() && protocolName == "TCP") {
+            textPayload = "$flagsInfo (مجرد محاولة اتصال / لا يوجد محتوى)"
+        }
+
+        val srcStr = "$srcIp:$sourcePort"
+        val destStr = "$destIp:$destPort"
+
         if (textPayload.isNotBlank()) {
-            // Use runBlocking or CoroutineScope to emit.
-            // Better to use GlobalScope or a service scope, but since this might be called frequently:
             GlobalScope.launch(Dispatchers.Default) {
-                CaptureManager.emitPacket(protocolName, srcIp, destIp, textPayload)
+                CaptureManager.emitPacket(protocolName, srcStr, destStr, textPayload)
             }
         }
     }
@@ -62,11 +90,9 @@ object PacketParser {
             }
         }
         
-        // If it's mostly printable ASCII, return as string otherwise Hex
         return if (printableCount > payload.size * 0.4) {
             String(payload, Charsets.US_ASCII).replace(Regex("[^\\x20-\\x7E\\r\\n\\t]"), "·")
         } else {
-            // Hex dump formatted nicely or just simple string
             payload.joinToString(" ") { "%02X".format(it) }
         }
     }

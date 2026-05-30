@@ -10,6 +10,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.FileInputStream
+import java.net.InetAddress
+import java.net.URL
 
 class CaptureService : VpnService() {
 
@@ -23,38 +25,76 @@ class CaptureService : VpnService() {
             return START_NOT_STICKY
         }
 
-        val targetPackage = CaptureManager.targetPackageName
-        if (targetPackage == null) {
-            stopSelf()
-            return START_NOT_STICKY
-        }
-
-        startVpn(targetPackage)
+        startVpn()
         return START_STICKY
     }
 
-    private fun startVpn(targetPackage: String) {
+    private fun startVpn() {
         if (vpnInterface != null) return
 
         try {
             val builder = Builder()
                 .setSession("CommandSniffer")
                 .addAddress("10.0.0.2", 24)
-                .addRoute("0.0.0.0", 0) // Route everything through VPN
-                .addAllowedApplication(targetPackage) // Only for chosen app
-                .allowBypass() // Allow apps to bypass VPN for local network discovery
+                .allowBypass()
 
-            // For local discovery to work inside the targeted app itself, sometimes routing 0.0.0.0/0 captures broadcast.
-            // Android 11+ might drop broadcasts in VPN if not routed properly, or might require allowBypass.
+            scope.launch {
+                var resolvedIp = ""
+                val input = CaptureManager.targetInput.trim()
+                
+                var hostPart = input
+                var portPart: Int? = null
+                
+                if (input.startsWith("http://") || input.startsWith("https://")) {
+                    try {
+                        val url = URL(input)
+                        hostPart = url.host
+                        if (url.port != -1) {
+                            portPart = url.port
+                        }
+                    } catch (e: Exception) {}
+                } else if (input.contains(":")) {
+                    val parts = input.split(":")
+                    if (parts.size == 2) {
+                        hostPart = parts[0]
+                        portPart = parts[1].toIntOrNull()
+                    }
+                }
 
-            vpnInterface = builder.establish()
+                if (hostPart.isNotEmpty()) {
+                    try {
+                        resolvedIp = InetAddress.getByName(hostPart).hostAddress ?: ""
+                    } catch (e: Exception) {
+                        Log.e("CaptureService", "Could not resolve: $hostPart")
+                    }
+                }
 
-            if (vpnInterface != null) {
-                CaptureManager.isCapturing = true
-                startReading(vpnInterface!!)
-            } else {
-                Log.e("CaptureService", "Failed to establish VPN")
-                stopCapture()
+                CaptureManager.targetIp = resolvedIp
+                CaptureManager.targetPort = portPart
+
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    try {
+                        if (resolvedIp.isNotEmpty()) {
+                            Log.d("CaptureService", "Routing IP: $resolvedIp")
+                            builder.addRoute(resolvedIp, 32)
+                        } else {
+                            builder.addRoute("0.0.0.0", 0)
+                        }
+                        
+                        vpnInterface = builder.establish()
+            
+                        if (vpnInterface != null) {
+                            CaptureManager.isCapturing = true
+                            startReading(vpnInterface!!)
+                        } else {
+                            Log.e("CaptureService", "Failed to establish VPN")
+                            stopCapture()
+                        }
+                    } catch (e: Exception) {
+                        Log.e("CaptureService", "VPN Build Error: ${e.message}")
+                        stopCapture()
+                    }
+                }
             }
         } catch (e: Exception) {
             Log.e("CaptureService", "VPN Error: ${e.message}")

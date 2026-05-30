@@ -14,8 +14,10 @@ data class CapturedPacket(
 object CaptureManager {
     val packetFlow = MutableSharedFlow<CapturedPacket>(replay = 100, extraBufferCapacity = 500)
     var isCapturing = false
-    var targetPackageName: String? = null
-    var targetAppName: String? = null
+    
+    var targetInput: String = ""
+    var targetIp: String = ""
+    var targetPort: Int? = null
     
     private var packetCounter = 0L
 
